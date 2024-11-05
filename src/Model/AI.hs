@@ -41,6 +41,7 @@ import qualified Data.Map as Map
 import Data.Ord (comparing)
 import Data.List (minimumBy, maximumBy)
 import Data.Bifunctor (bimap)
+import System.Random (randomRIO)
 
 -- Move ghost towards target position
 moveGhostTowards :: Ghost -> Position -> Ghost
@@ -166,31 +167,30 @@ updatePinky ghost pacman =
     in moveGhostTowards ghost targetPos
 
 -- Update Clyde's position (shy ghost - runs away when close)
-updateClyde :: Ghost -> PacMan -> Ghost
-updateClyde ghost pacman =
+updateClyde :: Ghost -> PacMan -> GameState -> Ghost
+updateClyde ghost pacman gameState =
     let Position (gx, gy) = ghostPosition ghost
         Position (px, py) = pacmanPosition pacman
         distance = sqrt ((gx - px)^2 + (gy - py)^2)
-        -- If within 8 tiles, run away; otherwise chase
-        target = if distance < 8
+        -- Calculate target position
+        rawTarget = if distance < 8
             then Position (gx * 2 - px, gy * 2 - py)  -- Run away
-            else pacmanPosition pacman                 -- Chase
-    in moveGhostTowards ghost target
+            else Position (0, 29)                      -- Scatter to corner
+        -- Validate target position
+        validTarget = if isValidPosition (board gameState) rawTarget
+                     then rawTarget
+                     else head $ getValidNeighbors (board gameState) (ghostPosition ghost) 
+    in moveGhostTowards ghost validTarget
 
 -- Update Inky's position (uses Blinky's position to determine target)
-updateInky :: Ghost -> PacMan -> Ghost
-updateInky ghost pacman =
-    let Position (px, py) = pacmanPosition pacman
-        -- Get position 2 tiles ahead of Pacman
-        aheadPos = case pacmanDirection pacman of
-            Up       -> Position (px, py - 2)
-            Down     -> Position (px, py + 2)
-            LeftDir  -> Position (px - 2, py)
-            RightDir -> Position (px + 2, py)
-        -- Calculate target by doubling vector from Blinky to ahead position
-        Position (ax, ay) = aheadPos
-        target = Position (ax * 2, ay * 2)
-    in moveGhostTowards ghost target
+updateInky :: Ghost -> PacMan -> GameState -> Ghost
+updateInky ghost pacman gameState =
+    let blinky = head [g | g <- ghosts gameState, ghostType g == Blinky]
+        rawTarget = getInkyTarget blinky pacman
+        validTarget = if isValidPosition (board gameState) rawTarget
+                     then rawTarget
+                     else head $ getValidNeighbors (board gameState) (ghostPosition ghost)
+    in moveGhostTowards ghost validTarget
 
 -- Update ghost target based on type
 getGhostTarget :: Ghost -> PacMan -> Position
@@ -330,18 +330,20 @@ getFlankPosition pacman ghost =
     in Position (px + dx, py + dy)
 
 -- Random patrol movement for Clyde
-getRandomPatrolPosition :: Ghost -> Board -> Position
-getRandomPatrolPosition ghost board =
+getRandomPatrolPosition :: Ghost -> Board -> IO Position
+getRandomPatrolPosition ghost board = do
     let Position (gx, gy) = ghostPosition ghost
-        -- This is a simplified version. In real implementation,
-        -- you'd want to use a proper random number generator
         possibleMoves = filter (isValidPosition board) 
             [ Position (gx + 1, gy)
             , Position (gx - 1, gy)
             , Position (gx, gy + 1)
             , Position (gx, gy - 1)
             ]
-    in head possibleMoves  -- In real implementation, choose randomly
+    case possibleMoves of
+        [] -> return $ ghostPosition ghost  -- If no valid moves, stay in place
+        moves -> do
+            index <- randomRIO (0, length moves - 1)
+            return $ moves !! index
 
 shouldExitHouse :: Ghost -> Bool
 shouldExitHouse ghost = 

@@ -51,7 +51,7 @@ initialGhosts :: [Ghost]
 initialGhosts = [
     Ghost {
         ghostType = Blinky,
-        ghostPosition = Position (13, 11),
+        ghostPosition = Position (11, 11),
         ghostDirection = Up,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
@@ -75,7 +75,7 @@ initialGhosts = [
     },
     Ghost {
         ghostType = Clyde,
-        ghostPosition = Position (15, 14),
+        ghostPosition = Position (14, 14),
         ghostDirection = Up,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
@@ -144,7 +144,7 @@ initialPowerPellets = [
 
 -- Get starting position for each ghost type
 getGhostStartPosition :: GhostType -> Position
-getGhostStartPosition Blinky = Position (13, 11)
+getGhostStartPosition Blinky = Position (11, 11)
 getGhostStartPosition Pinky  = Position (13, 14)
 getGhostStartPosition Inky   = Position (12, 14)
-getGhostStartPosition Clyde  = Position (15, 14)
+getGhostStartPosition Clyde  = Position (14, 14)

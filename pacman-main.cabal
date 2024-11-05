@@ -51,6 +51,7 @@ library
     , bytestring
     , containers
     , gloss
+    , random
     , text
   default-language: Haskell2010
 
@@ -70,6 +71,7 @@ executable pacman-main-exe
     , containers
     , gloss
     , pacman-main
+    , random
     , text
   default-language: Haskell2010
 
@@ -92,5 +94,6 @@ test-suite pacman-main-test
     , gloss
     , hspec
     , pacman-main
+    , random
     , text
   default-language: Haskell2010

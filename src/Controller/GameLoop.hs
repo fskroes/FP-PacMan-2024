@@ -22,9 +22,6 @@ updateGame dt gameState = do
             -- Print positions for debugging
             putStrLn $ "PacMan pos: " ++ show (pacmanPosition $ pacman gameState)
             putStrLn $ "Ghost pos: " ++ show (map ghostPosition $ ghosts gameState)
-            putStrLn $ "Time: " ++ show (gameTime gameState)
-            putStrLn $ "Score: " ++ show (gameScore gameState)
-            putStrLn $ "Lives: " ++ show (gameLives gameState)
             putStrLn $ "Status: " ++ show (statusMessage gameState)
             putStrLn "-------------------"
             
