@@ -12,7 +12,10 @@ module Model.AI(
     getAheadPosition,
     getFlankPosition,
     getRandomPatrolPosition,
-    shouldExitHouse
+    shouldExitHouse,
+    getPinkyTarget,
+    getClydeTarget,
+    heuristic
 ) where
 
 import Model.Types(

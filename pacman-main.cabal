@@ -79,6 +79,7 @@ test-suite pacman-main-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      AISpec
       Paths_pacman_main
   autogen-modules:
       Paths_pacman_main

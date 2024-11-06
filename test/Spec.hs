@@ -1,2 +1,6 @@
+import Test.Hspec
+import qualified AISpec
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = hspec $ do
+    AISpec.spec
