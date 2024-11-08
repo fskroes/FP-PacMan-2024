@@ -51,9 +51,17 @@ moveGhostTowards :: Ghost -> Position -> Ghost
 moveGhostTowards ghost targetPos =
     let Position (gx, gy) = ghostPosition ghost
         Position (tx, ty) = targetPos
-        dx = signum (tx - gx)
-        dy = signum (ty - gy)
-        newPos = Position (gx + dx, gy + dy)
+        -- Calculate direction vector
+        dx = tx - gx
+        dy = ty - gy
+        -- Normalize the movement
+        len = sqrt (dx * dx + dy * dy)
+        (nx, ny) = if len > 0
+                   then (dx / len, dy / len)
+                   else (0, 0)
+        -- Apply movement with fixed step size
+        stepSize = 0.5  -- Adjust this value as needed
+        newPos = Position (gx + nx * stepSize, gy + ny * stepSize)
     in ghost { ghostPosition = newPos }
 
 -- Handle frightened ghost behavior
@@ -63,44 +71,45 @@ handleFrightened ghost gameState =
         pacPos = pacmanPosition (pacman gameState)
         moveAmount = 0.1  -- Slower movement when frightened
         
-        -- Only change direction at grid intersections
-        Position (gx, gy) = currentPos
-        isOnGrid = abs (gx - fromIntegral (round gx)) < 0.1 && 
-                   abs (gy - fromIntegral (round gy)) < 0.1
+        -- Ensure ghost is at a valid position first
+        validCurrentPos = if isValidPosition (board gameState) currentPos
+                         then currentPos
+                         else getGhostStartPosition (ghostType ghost)
         
-        -- Get all valid moves
+        -- Get valid grid-aligned position
+        Position (gx, gy) = validCurrentPos
+        gridPos = Position (fromIntegral $ round gx, fromIntegral $ round gy)
+        
+        -- Only change direction at grid intersections
+        isOnGrid = heuristic gridPos validCurrentPos < 0.1
+        
+        -- Get all valid moves from the grid position
         validDirections = filter 
-            (\dir -> isValidPosition (board gameState) (moveInDirection currentPos dir))
+            (\dir -> isValidPosition (board gameState) (moveInDirection gridPos dir))
             [Up, Down, LeftDir, RightDir]
         
-        -- Remove opposite of current direction
-        allowedDirections = filter (/= oppositeDirection (ghostDirection ghost)) validDirections
+        -- Remove opposite of current direction if possible
+        allowedDirections = 
+            let filtered = filter (/= oppositeDirection (ghostDirection ghost)) validDirections
+            in if null filtered then validDirections else filtered
         
-        -- Convert directions to positions
-        possibleMoves = map (moveInDirection currentPos) 
-                       (if null allowedDirections then validDirections else allowedDirections)
-        
-        -- Choose a semi-random direction (prefer moves away from Pac-Man)
-        -- Use ghost's position as a factor to make each ghost behave differently
-        distanceScore pos = heuristic pos pacPos + 
-            fromIntegral (round (gx * 7919 + gy * 104729) `mod` 10)  -- Add pseudo-random factor
-        
-        newDir = if isOnGrid && not (null possibleMoves)
-                 then getDirectionFromPositions currentPos $ 
-                      maximumBy (comparing distanceScore) possibleMoves
+        -- Choose direction that maximizes distance from Pac-Man
+        newDir = if isOnGrid && not (null allowedDirections)
+                 then maximumBy 
+                      (comparing (\dir -> 
+                          heuristic (moveInDirection gridPos dir) pacPos))
+                      allowedDirections
                  else ghostDirection ghost
         
-        -- Move in the chosen direction
-        newPos = moveInDirection currentPos newDir
+        -- Move in the chosen direction with small step size
+        newPos = moveInDirection validCurrentPos newDir
         finalPos = if isValidPosition (board gameState) newPos
                   then newPos
-                  else currentPos
+                  else validCurrentPos
     in ghost { 
         ghostPosition = finalPos,
-        ghostDirection = if finalPos == currentPos 
-                        then changeDirection newDir  -- If blocked, reverse direction
-                        else newDir,
-        ghostSpeed = Speed moveAmount  -- Slower speed when frightened
+        ghostDirection = newDir,
+        ghostSpeed = Speed moveAmount
     }
 
 -- Handle eaten ghost behavior
@@ -108,15 +117,31 @@ handleEaten :: Ghost -> GameState -> Ghost
 handleEaten ghost gameState =
     let startPos = getGhostStartPosition (ghostType ghost)
         currentPos = ghostPosition ghost
-        path = findPath (board gameState) currentPos startPos
-    in case path of
-        Just (nextPos:_) -> ghost { 
-            ghostPosition = nextPos,
-            ghostDirection = getDirectionFromPositions currentPos nextPos,
-            ghostStatus = if nextPos == startPos then Chasing else Eaten,
-            ghostHouseState = if nextPos == startPos then InHouse else Outside
-        }
-        _ -> ghost  -- If no path found, stay in place
+        -- Force ghost into Eaten state if not already
+        ghostWithEatenStatus = ghost { ghostStatus = Eaten }
+        -- If at start position, transition to Chasing
+        isAtStart = heuristic currentPos startPos < 0.5
+        
+        -- Simple direct movement towards start position
+        moveTowardsStart = 
+            let Position (gx, gy) = currentPos
+                Position (sx, sy) = startPos
+                dx = sx - gx
+                dy = sy - gy
+                len = sqrt (dx * dx + dy * dy)
+                (nx, ny) = if len > 0
+                          then (dx / len, dy / len)
+                          else (0, 0)
+                stepSize = 0.5
+                newPos = Position (gx + nx * stepSize, gy + ny * stepSize)
+                newDir = getDirectionFromPositions currentPos newPos
+            in ghost { 
+                ghostPosition = newPos,
+                ghostDirection = newDir,
+                ghostStatus = if isAtStart then Chasing else Eaten,
+                ghostHouseState = if isAtStart then InHouse else Outside
+            }
+    in moveTowardsStart
 
 getPinkyTarget :: PacMan -> Position
 getPinkyTarget pacman =
@@ -316,11 +341,14 @@ getNewDirection ghost targetPos board =
 getAheadPosition :: PacMan -> Int -> Position
 getAheadPosition pacman tiles =
     let Position (px, py) = pacmanPosition pacman
-    in case pacmanDirection pacman of
-        Up    -> Position (px, py - fromIntegral tiles)
-        Down  -> Position (px, py + fromIntegral tiles)
-        LeftDir  -> Position (px - fromIntegral tiles, py)
-        RightDir -> Position (px + fromIntegral tiles, py)
+        tileDistance = fromIntegral tiles
+        -- Ensure exact tile distance by rounding non-movement coordinate
+        (newX, newY) = case pacmanDirection pacman of
+            Up    -> (fromIntegral (round px), py - tileDistance)
+            Down  -> (fromIntegral (round px), py + tileDistance)
+            LeftDir  -> (px - tileDistance, fromIntegral (round py))
+            RightDir -> (px + tileDistance, fromIntegral (round py))
+    in Position (newX, newY)
 
 -- Get flanking position (Inky's behavior)
 getFlankPosition :: PacMan -> Ghost -> Position

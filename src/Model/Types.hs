@@ -25,7 +25,8 @@ module Model.Types(
     PowerPellet(..),
     PowerUpType(..),
     PowerUpEffect(..),
-    Node(..)
+    Node(..),
+    ghostSpeedValue
 ) where
 
 import qualified Data.Aeson as Aeson
@@ -150,6 +151,9 @@ data Node = Node {
 
 instance Ord Node where
     compare = comparing (\n -> gScore n + hScore n)
+
+ghostSpeedValue :: Speed -> Float
+ghostSpeedValue (Speed s) = s
 
 -- Add these instances for GameState
 instance Aeson.ToJSON GameState where
