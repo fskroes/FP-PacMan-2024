@@ -13,44 +13,79 @@ import Model.Types(
     Time(..),
     GhostStatus(..),
     Board(..),
+    GhostHouseState(..),
+    Speed(..),
+    Score(..),
+    Lives(..),
+    GameStatus(..),
+    ghostSpeedValue
     )
 import Model.Common(
-    moveInDirection,
     isValidPosition,
-    changeDirection
+    moveInDirection,
     )
 import Model.AI(
-    chooseDirection,
     getGhostTarget,
     handleFrightened,
-    handleEaten
+    handleEaten,
+    moveGhostTowards,
+    shouldExitHouse,
+    heuristic
     )
+import Init(initialBoard)
 
--- Move ghost based on AI (to implement with pathfinding algorithm)
+-- Move ghost based on AI Pathfinding algorithm
 moveGhost :: Ghost -> GameState -> Ghost
 moveGhost ghost gameState = 
     case ghostStatus ghost of
         Chasing -> 
-            let currentPos = ghostPosition ghost
-                targetPos = getGhostTarget ghost (pacman gameState)
-                newDir = chooseDirection ghost gameState
-                moveAmount = 0.2
-                newPos = moveInDirection currentPos newDir
-                finalPos = if isValidPosition (board gameState) newPos
-                          then newPos
-                          else currentPos
-            in ghost { 
-                ghostPosition = finalPos,
-                ghostDirection = if finalPos == currentPos 
-                               then changeDirection newDir
-                               else newDir
-            }
-        Frightened (Time t) -> 
-            let frightenedGhost = handleFrightened ghost gameState
-            in frightenedGhost { 
-                ghostStatus = Frightened (Time (t - 0.016))  -- Update timer
-            }
+            case ghostHouseState ghost of
+                InHouse -> 
+                    if shouldExitHouse ghost gameState
+                    then ghost { ghostHouseState = Exiting }
+                    else handleInHouse ghost
+                Exiting -> handleExiting ghost
+                Outside -> handleNormalMovement ghost gameState
+        Frightened t -> handleFrightened ghost gameState
         Eaten -> handleEaten ghost gameState
+
+handleInHouse :: Ghost -> Ghost
+handleInHouse ghost =
+    let pos = ghostPosition ghost
+        newPos = moveInDirection pos Up (ghostSpeedValue $ ghostSpeed ghost)
+    in ghost { ghostPosition = newPos }
+
+handleExiting :: Ghost -> Ghost
+handleExiting ghost =
+    let exitPos = Position (14.0, 11.0)  -- Ghost house exit position
+        currentPos = ghostPosition ghost
+        dist = heuristic currentPos exitPos
+    in if dist < 0.5
+       then ghost { ghostHouseState = Outside }
+       else moveGhostTowards ghost exitPos defaultGameState  -- Use a dummy gamestate for movement
+
+-- Handle normal ghost movement outside the house
+handleNormalMovement :: Ghost -> GameState -> Ghost
+handleNormalMovement ghost gameState =
+    let targetPos = getGhostTarget ghost (pacman gameState)
+    in moveGhostTowards ghost targetPos gameState
+
+-- Minimal game state for movement calculations
+defaultGameState :: GameState
+defaultGameState = GameState {
+    board = initialBoard,
+    pacman = PacMan (Position (0, 0)) Up (Speed 0),
+    ghosts = [],
+    dots = [],
+    powerUps = [],
+    activeEffects = [],
+    score = Score 0,
+    lives = Lives 3,
+    gameStatus = Ongoing,
+    powerPellets = [],
+    statusMessage = Nothing,
+    dotsEaten = 0
+}
 
 -- Add this helper function
 isColliding :: Position -> Position -> Bool

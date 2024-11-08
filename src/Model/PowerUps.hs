@@ -92,8 +92,8 @@ applyGhostEffects effects ghosts =
     in if superDotActive
         then map (\ghost -> ghost { 
             ghostStatus = Frightened (Time 10.0),
-            ghostSpeed = Speed 0.1,  -- Slower speed when frightened
-            ghostDirection = oppositeDirection (ghostDirection ghost)  -- Reverse direction
+            ghostSpeed = Speed (ghostSpeedValue baseGhostSpeed * frightenedSpeedMultiplier),
+            ghostDirection = oppositeDirection (ghostDirection ghost) 
         }) ghosts
         else map resetGhostStatus ghosts
 
@@ -129,5 +129,9 @@ updateScoreWithPowerUp (Score currentScore) powerUpType =
 -- Reset ghost status when effects wear off
 resetGhostStatus :: Ghost -> Ghost
 resetGhostStatus ghost = case ghostStatus ghost of
-    Frightened _ -> ghost { ghostStatus = Chasing }
+    Frightened _ -> ghost { 
+        ghostStatus = Chasing,
+        ghostSpeed = baseGhostSpeed,
+        pathCache = Nothing  -- Reset path when status changes
+    }
     _ -> ghost

@@ -80,6 +80,7 @@ test-suite pacman-main-test
   main-is: Spec.hs
   other-modules:
       AISpec
+      PhysicsSpec
       Paths_pacman_main
   autogen-modules:
       Paths_pacman_main

@@ -18,10 +18,10 @@ initialGameState :: GameState
 initialGameState = GameState
     { board = initialBoard
     , pacman = PacMan (Position (14.0, 23.0)) LeftDir (Speed 0.2)
-    , ghosts = [ Ghost Blinky (Position (14.0, 11.0)) RightDir Chasing (Speed 0.2) Outside
-               , Ghost Pinky  (Position (14.0, 14.0)) Up Chasing (Speed 0.2) InHouse
-               , Ghost Inky   (Position (12.0, 14.0)) Up Chasing (Speed 0.2) InHouse
-               , Ghost Clyde  (Position (16.0, 14.0)) Up Chasing (Speed 0.2) InHouse
+    , ghosts = [ Ghost Blinky (Position (14.0, 11.0)) RightDir Chasing (Speed 0.2) Outside Nothing
+               , Ghost Pinky  (Position (14.0, 14.0)) Up Chasing (Speed 0.2) InHouse Nothing
+               , Ghost Inky   (Position (12.0, 14.0)) Up Chasing (Speed 0.2) InHouse Nothing
+               , Ghost Clyde  (Position (16.0, 14.0)) Up Chasing (Speed 0.2) InHouse Nothing
                ]
     , dots = generateDots initialWalls
     , powerUps = initialPowerUps
@@ -31,6 +31,7 @@ initialGameState = GameState
     , gameStatus = Ongoing
     , powerPellets = initialPowerPellets
     , statusMessage = Nothing
+    , dotsEaten = 0
     }
 
 initialBoard :: Board
@@ -51,19 +52,21 @@ initialGhosts :: [Ghost]
 initialGhosts = [
     Ghost {
         ghostType = Blinky,
-        ghostPosition = Position (11, 11),
-        ghostDirection = Up,
+        ghostPosition = Position (14.0, 11.0),
+        ghostDirection = LeftDir,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
-        ghostHouseState = OutHouse
+        ghostHouseState = Outside,
+        pathCache = Nothing
     },
     Ghost {
         ghostType = Pinky,
-        ghostPosition = Position (13, 14),
+        ghostPosition = Position (14.0, 14.0),
         ghostDirection = Up,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
-        ghostHouseState = InHouse
+        ghostHouseState = InHouse,
+        pathCache = Nothing
     },
     Ghost {
         ghostType = Inky,
@@ -71,7 +74,8 @@ initialGhosts = [
         ghostDirection = Up,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
-        ghostHouseState = InHouse
+        ghostHouseState = InHouse,
+        pathCache = Nothing
     },
     Ghost {
         ghostType = Clyde,
@@ -79,7 +83,8 @@ initialGhosts = [
         ghostDirection = Up,
         ghostStatus = Chasing,
         ghostSpeed = Speed 0.2,
-        ghostHouseState = InHouse
+        ghostHouseState = InHouse,
+        pathCache = Nothing
     }
     ]
 

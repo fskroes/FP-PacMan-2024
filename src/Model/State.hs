@@ -120,7 +120,10 @@ handleCollision pacman ghost gameState =
 checkDotCollision :: PacMan -> Dot -> GameState -> GameState
 checkDotCollision pacman dot gameState = 
     if pacmanPosition pacman == Position (dotPosition dot)
-        then gameState { score = Score (currentScore + 10) }
+        then gameState { 
+            score = Score (currentScore + 10),
+            dotsEaten = dotsEaten gameState + 1
+        }
         else gameState
     where
         Score currentScore = score gameState
@@ -150,7 +153,8 @@ resetAfterDeath gameState = gameState {
         ghostStatus = Chasing,
         ghostHouseState = case ghostType ghost of
             Blinky -> Outside  -- Blinky starts outside
-            _ -> InHouse      -- Others start inside
+            _ -> InHouse,      -- Others start inside
+        pathCache = Nothing  -- Reset path cache
     }) (ghosts gameState),
     -- Keep the game going
     gameStatus = Ongoing

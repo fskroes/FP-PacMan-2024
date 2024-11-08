@@ -9,11 +9,9 @@ module Model.Common(
 
 import Model.Types(Board(..), Cell(..), Position(..), Direction(..), MazeElement(..))
 
--- Add this near the top of the file, before it's used
-moveInDirection :: Position -> Direction -> Position
-moveInDirection (Position (x, y)) direction = 
-    let moveAmount = 0.2
-    in case direction of
+moveInDirection :: Position -> Direction -> Float -> Position
+moveInDirection (Position (x, y)) direction moveAmount = 
+    case direction of
         Up -> Position (fromIntegral (round x), y - moveAmount)
         Down -> Position (fromIntegral (round x), y + moveAmount)
         LeftDir -> Position (x - moveAmount, fromIntegral (round y))

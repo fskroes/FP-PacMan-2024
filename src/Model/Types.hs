@@ -26,7 +26,8 @@ module Model.Types(
     PowerUpType(..),
     PowerUpEffect(..),
     Node(..),
-    ghostSpeedValue
+    PathCache(..),
+    ghostSpeedValue, baseGhostSpeed, frightenedSpeedMultiplier, eatenSpeedMultiplier
 ) where
 
 import qualified Data.Aeson as Aeson
@@ -42,7 +43,7 @@ newtype Lives = Lives Int
     deriving (Show)
 data GameStatus = Ongoing | Won | Loss | Paused 
     deriving (Show)
-data GhostHouseState = InHouse | OutHouse | Waiting Time | Exiting | Outside
+data GhostHouseState =  InHouse | Exiting | Outside
     deriving (Show, Eq)
 
 data GameState = GameState {
@@ -56,7 +57,8 @@ data GameState = GameState {
     lives           :: Lives,
     gameStatus      :: GameStatus,
     powerPellets    :: [PowerPellet],
-    statusMessage   :: Maybe (String, Float)  -- (Message, Time remaining to show)
+    statusMessage   :: Maybe (String, Float),
+    dotsEaten       :: Int
 } deriving (Show)
 
 newtype Speed       = Speed Float
@@ -86,14 +88,35 @@ data GhostStatus = Chasing | Frightened Time | Eaten
 data Direction      = Up | Down | LeftDir | RightDir
     deriving (Eq, Show)
 
+-- Add this before Ghost definition
+data PathCache = PathCache {
+    path :: [Position],
+    targetPos :: Position,
+    updateTime :: Float
+} deriving (Show, Eq) 
+
 data Ghost = Ghost {
     ghostType       :: GhostType,
     ghostPosition   :: Position,
     ghostDirection  :: Direction,
     ghostStatus     :: GhostStatus,
     ghostSpeed      :: Speed,
-    ghostHouseState :: GhostHouseState
+    ghostHouseState :: GhostHouseState,
+    pathCache       :: Maybe PathCache 
 } deriving (Show, Eq)
+
+-- constants
+baseGhostSpeed :: Speed
+baseGhostSpeed = Speed 0.2
+
+frightenedSpeedMultiplier :: Float
+frightenedSpeedMultiplier = 0.5  -- Frightened ghosts move at 50% speed
+
+eatenSpeedMultiplier :: Float
+eatenSpeedMultiplier = 1.5  -- Eaten ghosts move faster to return to house
+
+ghostSpeedValue :: Speed -> Float
+ghostSpeedValue (Speed s) = s
 
 data Cell = WallCell | EmptyCell | DotCell | PowerUpCell
     deriving (Show)
@@ -152,12 +175,9 @@ data Node = Node {
 instance Ord Node where
     compare = comparing (\n -> gScore n + hScore n)
 
-ghostSpeedValue :: Speed -> Float
-ghostSpeedValue (Speed s) = s
-
 -- Add these instances for GameState
 instance Aeson.ToJSON GameState where
-    toJSON (GameState board pacman ghosts dots powerups effects score lives status pellets msg) =
+    toJSON (GameState board pacman ghosts dots powerups effects score lives status pellets msg dotsEaten) =
         Aeson.object [ Key.fromString "board" .= board
                     , Key.fromString "pacman" .= pacman
                     , Key.fromString "ghosts" .= ghosts
@@ -169,6 +189,7 @@ instance Aeson.ToJSON GameState where
                     , Key.fromString "gameStatus" .= status
                     , Key.fromString "powerPellets" .= pellets
                     , Key.fromString "statusMessage" .= msg
+                    , Key.fromString "dotsEaten" .= dotsEaten
                     ]
 
 instance Aeson.FromJSON GameState where
@@ -184,6 +205,7 @@ instance Aeson.FromJSON GameState where
                  <*> v .: Key.fromString "gameStatus"
                  <*> v .: Key.fromString "powerPellets"
                  <*> v .: Key.fromString "statusMessage"
+                 <*> v .: Key.fromString "dotsEaten"
 
 -- Add ToJSON/FromJSON instances for basic types
 instance Aeson.ToJSON Score where
@@ -298,13 +320,14 @@ instance Aeson.FromJSON GhostStatus where
             _ -> fail "Invalid GhostStatus"
 
 instance Aeson.ToJSON Ghost where
-    toJSON (Ghost typ pos dir status spd house) = Aeson.object [
+    toJSON (Ghost typ pos dir status spd house cache) = Aeson.object [
         "type" .= typ,
         "position" .= pos,
         "direction" .= dir,
         "status" .= status,
         "speed" .= spd,
-        "houseState" .= house
+        "houseState" .= house,
+        "pathCache" .= cache
         ]
 
 instance Aeson.FromJSON Ghost where
@@ -315,6 +338,7 @@ instance Aeson.FromJSON Ghost where
               <*> v .: Key.fromString "status"
               <*> v .: Key.fromString "speed"
               <*> v .: Key.fromString "houseState"
+              <*> v .: Key.fromString "pathCache"
 
 instance Aeson.ToJSON Dot where
     toJSON (Dot pos) = Aeson.object [ "position" .= pos ]
@@ -395,8 +419,6 @@ instance Aeson.FromJSON MazeElement where
 instance Aeson.ToJSON GhostHouseState where
     toJSON = \case
         InHouse -> Aeson.object [ "type" .= ("inhouse" :: String) ]
-        OutHouse -> Aeson.object [ "type" .= ("outhouse" :: String) ]
-        Waiting t -> Aeson.object [ "type" .= ("waiting" :: String), "time" .= t ]
         Exiting -> Aeson.object [ "type" .= ("exiting" :: String) ]
         Outside -> Aeson.object [ "type" .= ("outside" :: String) ]
 
@@ -405,8 +427,6 @@ instance Aeson.FromJSON GhostHouseState where
         typ <- v .: "type" :: Aeson.Parser String
         case typ of
             "inhouse" -> pure InHouse
-            "outhouse" -> pure OutHouse
-            "waiting" -> Waiting <$> v .: "time"
             "exiting" -> pure Exiting
             "outside" -> pure Outside
             _ -> fail "Invalid GhostHouseState"
@@ -422,3 +442,16 @@ instance Ord Position where
         case compare x1 x2 of
             EQ -> compare y1 y2
             other -> other
+
+instance Aeson.ToJSON PathCache where
+    toJSON (PathCache p t u) = Aeson.object [
+        "path" .= p,
+        "targetPos" .= t,
+        "updateTime" .= u
+        ]
+
+instance Aeson.FromJSON PathCache where
+    parseJSON = Aeson.withObject "PathCache" $ \v ->
+        PathCache <$> v .: Key.fromString "path"
+                 <*> v .: Key.fromString "targetPos"
+                 <*> v .: Key.fromString "updateTime"
