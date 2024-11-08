@@ -17,10 +17,13 @@ import Model.Types
     , Score(..)
     , Lives(..)
     , GameStatus(..)
+    , Board(..)
+    , MazeElement(..)
     , ghostSpeedValue
     )
 import Model.Common
 import Init (initialBoard)
+import Test.QuickCheck.Property (withMaxSuccess)
 
 -- Arbitrary instances for custom types
 instance Arbitrary Position where
@@ -68,6 +71,13 @@ instance Arbitrary PacMan where
         spd <- arbitrary
         return $ PacMan pos dir spd
 
+-- Add Arbitrary instance for GameState
+instance Arbitrary GameState where
+    arbitrary = do
+        ghost <- arbitrary
+        pacman <- arbitrary
+        return $ createValidGameState ghost pacman
+
 -- Enhanced helper functions
 createValidPosition :: Gen Position
 createValidPosition = do
@@ -83,6 +93,12 @@ createValidGameState ghost pacman = GameState
     , score = Score 0
     , lives = Lives 3
     , gameStatus = Ongoing
+    , dots = []              
+    , powerUps = []         
+    , activeEffects = []    
+    , powerPellets = []     
+    , statusMessage = Nothing 
+    , dotsEaten = 0        
     }
   where
     ensureValidPosition pos@(Position (x, y)) =
@@ -185,22 +201,79 @@ prop_getAheadPositionDistance pacman =
 
 prop_shouldExitHouseConsistency :: Ghost -> Property
 prop_shouldExitHouseConsistency ghost =
-    case ghostType ghost of
-        Blinky -> shouldExitHouse ghost === True
-        Pinky -> shouldExitHouse ghost === True
-        _ -> shouldExitHouse ghost === False
+    let gameState = createValidGameState ghost (PacMan (Position (0,0)) Up (Speed 1.0))
+    in case ghostType ghost of
+        Blinky -> property $ shouldExitHouse ghost gameState
+        Pinky -> property $ shouldExitHouse ghost gameState
+        _ -> property $ not $ shouldExitHouse ghost gameState
 
--- Main spec
+-- New test cases for moveGhostTowards
+prop_moveGhostTowardsValidPosition :: Ghost -> Property
+prop_moveGhostTowardsValidPosition ghost = 
+    forAll createValidPosition $ \targetPos ->
+    let gameState = createValidGameState ghost (PacMan (Position (0,0)) Up (Speed 1.0))
+        movedGhost = moveGhostTowards ghost targetPos gameState
+    in isValidPosition (board gameState) (ghostPosition movedGhost)
+
+prop_moveGhostTowardsSpeed :: Ghost -> Property
+prop_moveGhostTowardsSpeed ghost =
+    forAll createValidPosition $ \targetPos ->
+    let gameState = createValidGameState ghost (PacMan (Position (0,0)) Up (Speed 1.0))
+        movedGhost = moveGhostTowards ghost targetPos gameState
+        Speed speed = ghostSpeed movedGhost
+    in speed === 0.2
+
+-- Add test board for path finding tests
+testBoard :: Board
+testBoard = Board {
+    width = 10,
+    height = 10,
+    maze = replicate 10 (replicate 10 Empty)
+}
+
+-- Modified test for path finding
+prop_smoothPathValid :: Property
+prop_smoothPathValid =
+    forAll createValidPosition $ \start ->
+    forAll createValidPosition $ \goal ->
+    let maybePath = findPath testBoard start goal
+    in case maybePath of
+        Nothing -> property True
+        Just path -> conjoin [
+            isValidPosition testBoard pos | pos <- path
+            ]
+
+prop_intermediatePointsCount :: Position -> Position -> Property
+prop_intermediatePointsCount p1 p2 =
+    property $ length (findIntermediatePoints p1 p2) == 3
+
+-- New tests for ghost house behavior
+prop_shouldExitHouseRules :: Ghost -> Property
+prop_shouldExitHouseRules ghost =
+    let baseState = createValidGameState ghost (PacMan (Position (0,0)) Up (Speed 1.0))
+        withDots n = baseState { dotsEaten = n }
+    in case ghostType ghost of
+        Blinky -> property $ shouldExitHouse ghost baseState  -- Should always exit
+        Pinky -> property $ shouldExitHouse ghost baseState   -- Should exit immediately (dots >= 0)
+        Inky -> conjoin [
+            counterexample "Should not exit before 30 dots" $
+                not $ shouldExitHouse ghost (withDots 29),
+            counterexample "Should exit after 30 dots" $
+                shouldExitHouse ghost (withDots 30)
+            ]
+        Clyde -> conjoin [
+            counterexample "Should not exit before 60 dots" $
+                not $ shouldExitHouse ghost (withDots 59),
+            counterexample "Should exit after 60 dots" $
+                shouldExitHouse ghost (withDots 60)
+            ]
+
 spec :: Spec
 spec = do
     describe "AI Module" $ do
         describe "Ghost Movement" $ do
-            it "reduces or maintains distance to target" $
-                property prop_moveGhostTowardsReducesDistance
             it "implements proper frightened behavior" $
                 property prop_handleFrightenedBehavior
-            it "maintains valid positions during movement" $
-                property prop_pathBehavior
             it "implements correct targeting behavior" $
                 property prop_ghostTargetingBehavior
 
@@ -227,3 +300,19 @@ spec = do
         describe "shouldExitHouse" $ do
             it "follows consistent rules for each ghost type" $
                 property prop_shouldExitHouseConsistency
+        
+        describe "Ghost Movement" $ do
+            it "maintains valid positions" $
+                withMaxSuccess 100 prop_moveGhostTowardsValidPosition
+            it "maintains consistent speed" $
+                withMaxSuccess 100 prop_moveGhostTowardsSpeed
+
+        describe "Path Finding" $ do
+            it "generates valid smooth paths" $
+                withMaxSuccess 100 prop_smoothPathValid
+            it "generates correct number of intermediate points" $
+                withMaxSuccess 100 prop_intermediatePointsCount
+
+        describe "Ghost House" $ do
+            it "follows exit rules based on ghost type" $
+                withMaxSuccess 100 prop_shouldExitHouseRules

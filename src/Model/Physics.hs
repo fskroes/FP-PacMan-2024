@@ -1,7 +1,9 @@
 module Model.Physics(
     moveGhost,
     movePacMan,
-    isColliding
+    isColliding,
+    handleExiting,
+    handleInHouse
 ) where
 
 import Model.Types(
@@ -18,6 +20,7 @@ import Model.Types(
     Score(..),
     Lives(..),
     GameStatus(..),
+    GhostType(..),
     ghostSpeedValue
     )
 import Model.Common(
@@ -30,7 +33,11 @@ import Model.AI(
     handleEaten,
     moveGhostTowards,
     shouldExitHouse,
-    heuristic
+    heuristic,
+    updateBlinky,
+    updatePinky,
+    updateInky,
+    updateClyde
     )
 import Init(initialBoard)
 
@@ -44,33 +51,111 @@ moveGhost ghost gameState =
                     if shouldExitHouse ghost gameState
                     then ghost { ghostHouseState = Exiting }
                     else handleInHouse ghost
-                Exiting -> handleExiting ghost
-                Outside -> handleNormalMovement ghost gameState
+                Exiting -> handleExiting ghost {ghostSpeed = Speed 0.2}  -- Add speed to ensure movement
+                Outside -> 
+                    case ghostType ghost of
+                        Blinky -> updateBlinky ghost (pacman gameState) gameState
+                        Pinky -> updatePinky ghost (pacman gameState) gameState
+                        Inky -> updateInky ghost (pacman gameState) gameState  -- Add pacman parameter
+                        Clyde -> updateClyde ghost (pacman gameState) gameState
         Frightened t -> handleFrightened ghost gameState
         Eaten -> handleEaten ghost gameState
 
 handleInHouse :: Ghost -> Ghost
 handleInHouse ghost =
     let pos = ghostPosition ghost
-        newPos = moveInDirection pos Up (ghostSpeedValue $ ghostSpeed ghost)
-    in ghost { ghostPosition = newPos }
+        Speed speed = ghostSpeed ghost
+        newPos = moveInDirection pos Up speed  -- Use actual speed value
+    in ghost { 
+        ghostPosition = newPos,
+        ghostDirection = Up
+    }
 
 handleExiting :: Ghost -> Ghost
 handleExiting ghost =
     let exitPos = Position (14.0, 11.0)  -- Ghost house exit position
         currentPos = ghostPosition ghost
+        Speed speed = ghostSpeed ghost
         dist = heuristic currentPos exitPos
+        
+        -- Move towards exit
+        dx = (fst (getCoords exitPos) - fst (getCoords currentPos))
+        dy = (snd (getCoords exitPos) - snd (getCoords currentPos))
+        len = sqrt (dx * dx + dy * dy)
+        
+        newPos = if len > 0
+                 then let scale = speed / len
+                      in Position (fst (getCoords currentPos) + dx * scale,
+                                 snd (getCoords currentPos) + dy * scale)
+                 else currentPos
+                 
     in if dist < 0.5
-       then ghost { ghostHouseState = Outside }
-       else moveGhostTowards ghost exitPos defaultGameState  -- Use a dummy gamestate for movement
+       then ghost { 
+           ghostHouseState = Outside,
+           ghostDirection = Up,
+           ghostPosition = exitPos  -- Ensure clean exit position
+       }
+       else ghost {
+           ghostPosition = newPos,
+           ghostDirection = Up
+       }
+  where
+    getCoords (Position (x, y)) = (x, y)
 
 -- Handle normal ghost movement outside the house
 handleNormalMovement :: Ghost -> GameState -> Ghost
 handleNormalMovement ghost gameState =
     let targetPos = getGhostTarget ghost (pacman gameState)
-    in moveGhostTowards ghost targetPos gameState
+        -- Ensure target is within board bounds
+        Position (tx, ty) = targetPos
+        boundedTarget = Position (
+            clamp 0 (fromIntegral (width (board gameState) - 1)) tx,
+            clamp 0 (fromIntegral (height (board gameState) - 1)) ty
+            )
+    in moveGhostTowards ghost boundedTarget gameState
+  where
+    clamp low high x = max low (min high x)
 
--- Minimal game state for movement calculations
+-- Add this helper function
+isColliding :: Position -> Position -> Bool
+isColliding (Position (x1, y1)) (Position (x2, y2)) =
+    let dx = x1 - x2
+        dy = y1 - y2
+        threshold = 0.5 
+    in dx * dx + dy * dy < threshold * threshold
+
+movePacMan :: PacMan -> Direction -> Board -> PacMan
+movePacMan pacman dir board = 
+    let Position (px, py) = pacmanPosition pacman
+        -- Only allow movement when at a grid position or continuing in same direction
+        isOnGrid = abs (px - fromIntegral (round px)) < 0.1 && 
+                   abs (py - fromIntegral (round py)) < 0.1
+        moveAmount = 0.2
+        -- Snap to grid when changing direction
+        snappedPos = Position (fromIntegral (round px), fromIntegral (round py))
+        startPos = if dir /= pacmanDirection pacman && isOnGrid
+                  then snappedPos
+                  else pacmanPosition pacman
+        Position (sx, sy) = startPos
+        
+        newPos = case dir of
+            Up -> Position (fromIntegral (round sx), sy - moveAmount)
+            Down -> Position (fromIntegral (round sx), sy + moveAmount)
+            LeftDir -> Position (sx - moveAmount, fromIntegral (round sy))
+            RightDir -> Position (sx + moveAmount, fromIntegral (round sy))
+
+        finalPos = if isValidPosition board newPos
+                  then newPos
+                  else pacmanPosition pacman
+                  
+    in pacman { 
+        pacmanPosition = finalPos,
+        pacmanDirection = if isOnGrid && isValidPosition board newPos
+                         then dir 
+                         else pacmanDirection pacman
+    }
+
+-- Add default game state for movement
 defaultGameState :: GameState
 defaultGameState = GameState {
     board = initialBoard,
@@ -86,37 +171,3 @@ defaultGameState = GameState {
     statusMessage = Nothing,
     dotsEaten = 0
 }
-
--- Add this helper function
-isColliding :: Position -> Position -> Bool
-isColliding (Position (x1, y1)) (Position (x2, y2)) =
-    let dx = x1 - x2
-        dy = y1 - y2
-        threshold = 0.5  -- Adjust this value as needed
-    in dx * dx + dy * dy < threshold * threshold
-
-movePacMan :: PacMan -> Direction -> Board -> PacMan
-movePacMan pacman dir board = 
-    let Position (px, py) = pacmanPosition pacman
-        -- Only allow movement when at a grid position
-        isOnGrid = abs (px - fromIntegral (round px)) < 0.1 && 
-                   abs (py - fromIntegral (round py)) < 0.1
-        moveAmount = 0.2
-        newPos = if isOnGrid
-                 then case dir of
-                    Up -> Position (fromIntegral (round px), py - moveAmount)
-                    Down -> Position (fromIntegral (round px), py + moveAmount)
-                    LeftDir -> Position (px - moveAmount, fromIntegral (round py))
-                    RightDir -> Position (px + moveAmount, fromIntegral (round py))
-                 else case pacmanDirection pacman of
-                    Up -> Position (fromIntegral (round px), py - moveAmount)
-                    Down -> Position (fromIntegral (round px), py + moveAmount)
-                    LeftDir -> Position (px - moveAmount, fromIntegral (round py))
-                    RightDir -> Position (px + moveAmount, fromIntegral (round py))
-        finalPos = if isValidPosition board newPos
-                  then newPos
-                  else pacmanPosition pacman
-    in pacman { 
-        pacmanPosition = finalPos, 
-        pacmanDirection = if isOnGrid then dir else pacmanDirection pacman
-    }

@@ -39,41 +39,34 @@ import Model.Physics(
 -- Update updateGameState to handle power-up effects
 updateGameState :: GameState -> GameState
 updateGameState gameState = 
-    let -- Update status message timer
-        updatedStatusMessage = case statusMessage gameState of
-            Just (msg, timeLeft) -> 
-                if timeLeft > 0
-                then Just (msg, timeLeft - 0.016)  -- Decrease timer (assuming 60 FPS)
-                else Nothing
-            Nothing -> Nothing
-
-        -- Move PacMan in current direction
+    let -- Move PacMan in current direction
         newPacman = movePacMan (pacman gameState) 
-                              (pacmanDirection (pacman gameState)) 
-                              (board gameState)
+                             (pacmanDirection (pacman gameState)) 
+                             (board gameState)
         
         -- Update power-up effects
-        gameStateWithEffects = updatePowerUps 0.016 gameState  -- Assuming 60 FPS (1/60 ≈ 0.016)
+        gameStateWithEffects = updatePowerUps 0.016 gameState
         
-        -- Move ghosts with updated effects
-        newGhosts = map (`moveGhost` gameStateWithEffects) (ghosts gameStateWithEffects)
+        -- Update ghosts one at a time to maintain consistent state
+        newGhosts = foldl (\ghosts g -> 
+            let updatedGhost = moveGhost g gameStateWithEffects { ghosts = ghosts }
+            in updatedGhost : filter (\og -> ghostType og /= ghostType g) ghosts
+            ) [] (ghosts gameStateWithEffects)
         
-        -- Update dots (remove eaten dots)
+        -- Update dots and score
         newDots = filter (not . isDotEaten newPacman) (dots gameState)
-        
-        -- Update score based on eaten dots
-        dotsEaten = length (dots gameState) - length newDots
+        dotsEatenCount = length (dots gameState) - length newDots
         newScore = Score $ case score gameState of
-            Score s -> s + (dotsEaten * 10)
-
-        -- Create new game state
+            Score s -> s + (dotsEatenCount * 10)
+            
         newState = gameStateWithEffects {
             pacman = newPacman,
-            ghosts = newGhosts,
+            ghosts = reverse newGhosts,  -- Reverse to maintain original order
             dots = newDots,
-            score = newScore
+            score = newScore,
+            dotsEaten = dotsEaten gameState + dotsEatenCount
         }
-    in checkCollisions newState  -- Check for collisions after updating positions
+    in checkCollisions newState
 
 -- Check for collisions between Pacman and all game entities
 checkCollisions :: GameState -> GameState

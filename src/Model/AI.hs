@@ -17,7 +17,8 @@ module Model.AI(
     getClydeTarget,
     heuristic,
     findPath,
-    limitStep
+    limitStep,
+    findIntermediatePoints 
 ) where
 
 import Model.Types
@@ -44,47 +45,42 @@ limitStep maxStep dx dy =
 -- Modified moveGhostTowards to ensure valid positions
 moveGhostTowards :: Ghost -> Position -> GameState -> Ghost
 moveGhostTowards ghost target gameState =
-    let currentPos = ensureValidPosition (board gameState) (ghostPosition ghost)
-        validTarget = ensureValidPosition (board gameState) target
-        maxStep = ghostSpeedValue (ghostSpeed ghost)
+    let currentPos = ghostPosition ghost
+        Speed speed = ghostSpeed ghost
         
-        -- Round positions to nearest grid point
+        -- Ensure positions are within bounds
         Position (gx, gy) = currentPos
-        Position (tx, ty) = validTarget
+        Position (tx, ty) = target
         
         -- Calculate direction vector
         dx = tx - gx
-        dy = ty - gy
+        dy = ty
         dist = sqrt (dx * dx + dy * dy)
         
-        -- Normalize and scale movement, ensuring we don't exceed maxStep
-        (nx, ny) = if dist <= 0.001
-                   then (0, 0)
-                   else let scale = min maxStep dist / dist
+        -- Only move if we're not already at the target
+        (nx, ny) = if dist > 0.1
+                   then let scale = speed / dist
                         in (dx * scale, dy * scale)
+                   else (0, 0)
         
         -- Calculate new position
         proposedPos = Position (gx + nx, gy + ny)
         
-        -- Ensure the new position is valid and on the grid
+        -- Only update if the new position is valid
         finalPos = if isValidPosition (board gameState) proposedPos
-                  then snapToGrid proposedPos
-                  else snapToGrid currentPos
+                  then proposedPos
+                  else currentPos
                   
-    in ghost { ghostPosition = finalPos }
-  where
-    ensureValidPosition board pos@(Position (x, y)) =
-        snapToGrid $ Position (
-            clamp 0 (fromIntegral (width board - 1)) x,
-            clamp 0 (fromIntegral (height board - 1)) y
-        )
-    clamp low high x = max low (min high x)
-    -- Helper to snap position to nearest grid point
-    snapToGrid (Position (x, y)) = 
-        Position (
-            fromIntegral (round x) + (x - fromIntegral (round x)) * 0.5,
-            fromIntegral (round y) + (y - fromIntegral (round y)) * 0.5
-        )
+        -- Update direction based on movement
+        newDir = if dist > 0.1
+                 then getDirectionFromPositions currentPos finalPos
+                 else ghostDirection ghost
+                  
+    in ghost { 
+        ghostPosition = finalPos,
+        ghostDirection = newDir,
+        ghostSpeed = Speed 0.2  -- Ensure consistent speed
+    }
 
 -- Handle frightened ghost behavior
 handleFrightened :: Ghost -> GameState -> Ghost
